@@ -7,3 +7,4 @@ Thumbs.db
 *.map
 console/node_modules/.vite-temp/
 console/_halo_conn_style.txt
+build-plugin.ps1
