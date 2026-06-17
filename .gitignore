@@ -1,0 +1,9 @@
+console/node_modules/
+/dist/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.map
+console/node_modules/.vite-temp/
+console/_halo_conn_style.txt

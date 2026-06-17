@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AstraHub 星链 · 本地预览</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; background: #eef2f7; }
+      /* 模拟 WP 后台容器高度，让 .ah-page 的 calc 高度有意义 */
+      #wp-astrahub-app { height: 100vh; }
+    </style>
+    <script>
+      // 本地 dev 预览用 mock bootstrap，模拟 PHP 注入的 window.WP_ASTRAHUB_BOOTSTRAP。
+      // restBase 指向 dev 时不可达，前端在未登舱态会走占位逻辑；联调真实接口时改为真实 WP 地址。
+      window.WP_ASTRAHUB_BOOTSTRAP = {
+        restBase: "/wp-json/wp-astrahub/v1",
+        restNonce: "dev-nonce",
+        hubBaseUrl: "https://astra.aobp.cn",
+        registered: false,
+        __dev: true
+      };
+    </script>
+  </head>
+  <body>
+    <div id="wp-astrahub-app" data-astrahub-app></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
