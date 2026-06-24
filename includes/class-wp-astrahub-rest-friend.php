@@ -110,6 +110,11 @@ class WP_AstraHub_Rest_Friend {
             'permission_callback' => $permission,
             'callback'            => array( $this, 'handle_remove_relation' ),
         ) );
+        register_rest_route( $ns, '/friend-follows/(?P<peerSiteId>[^/]+)/remove', array(
+            'methods'             => 'POST',
+            'permission_callback' => $permission,
+            'callback'            => array( $this, 'handle_remove_follow' ),
+        ) );
         register_rest_route( $ns, '/friend-invitations/link-groups', array(
             'methods'             => 'GET',
             'permission_callback' => $permission,
@@ -345,7 +350,46 @@ class WP_AstraHub_Rest_Friend {
         }
         $body     = $response['body'];
         $peer_url = isset( $body['peerSiteUrl'] ) ? (string) $body['peerSiteUrl'] : '';
-        $local    = $peer_url !== '' ? $this->reconcile->delete_by_peer_url( $peer_url ) : array( 'deleted' => 0, 'message' => '' );
+        $local    = ( $peer_url !== '' || $peer_site_id !== '' )
+            ? $this->reconcile->delete_by_peer_url( $peer_url, $peer_site_id )
+            : array( 'deleted' => 0, 'message' => '' );
+        return new WP_REST_Response(
+            array(
+                'success' => true,
+                'data'    => array(
+                    'removed'          => isset( $body['removed'] ) ? (bool) $body['removed'] : true,
+                    'peerSiteId'       => $peer_site_id,
+                    'peerSiteUrl'      => $peer_url,
+                    'localLinkDeleted' => isset( $local['deleted'] ) ? (int) $local['deleted'] : 0,
+                    'localLinkMessage' => isset( $local['message'] ) ? $local['message'] : '',
+                ),
+            ),
+            200
+        );
+    }
+
+    /**
+     * 删除我方单向关注：Hub 只删 actor -> peer，本地删除对应 WP 友链，不发邮件。
+     *
+     * @param WP_REST_Request $request 请求。
+     * @return WP_REST_Response
+     */
+    public function handle_remove_follow( WP_REST_Request $request ) {
+        if ( ! $this->credentials->is_registered() ) {
+            return $this->not_registered();
+        }
+        $peer_site_id = (string) $request->get_param( 'peerSiteId' );
+        $path         = '/v1/friend-follows/' . rawurlencode( $peer_site_id ) . '/remove';
+        $response     = $this->hub_client->request_signed( 'POST', $path, array() );
+        if ( ! $response['success'] ) {
+            return $this->fail( $response['status'], $response['message'] );
+        }
+        $body     = $response['body'];
+        $peer_url = isset( $body['peerSiteUrl'] ) ? (string) $body['peerSiteUrl'] : '';
+        $local    = ( $peer_url !== '' || $peer_site_id !== '' )
+            ? $this->reconcile->delete_by_peer_url( $peer_url, $peer_site_id )
+            : array( 'deleted' => 0, 'message' => '' );
+
         return new WP_REST_Response(
             array(
                 'success' => true,

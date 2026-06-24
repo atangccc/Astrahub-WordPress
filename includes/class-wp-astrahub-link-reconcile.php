@@ -49,7 +49,11 @@ class WP_AstraHub_Link_Reconcile {
 
         // 去重：按 URL 比对现有友链。
         foreach ( $this->all_bookmarks() as $b ) {
-            if ( strcasecmp( $this->trim( $b->link_url ), $peer_url ) === 0 ) {
+            $bookmark_peer_id = $this->extract_peer_site_id( (string) ( $b->link_notes ?? '' ) );
+            if ( '' !== $peer_id && $bookmark_peer_id === $peer_id ) {
+                return array( 'success' => true, 'created' => false, 'duplicate' => true, 'message' => 'duplicate' );
+            }
+            if ( $this->same_site_url( $this->trim( $b->link_url ), $peer_url ) ) {
                 return array( 'success' => true, 'created' => false, 'duplicate' => true, 'message' => 'duplicate' );
             }
         }
@@ -82,15 +86,19 @@ class WP_AstraHub_Link_Reconcile {
      * @param string $peer_url 对端 URL。
      * @return array{success:bool,deleted:int,message:string}
      */
-    public function delete_by_peer_url( $peer_url ) {
+    public function delete_by_peer_url( $peer_url, $peer_site_id = '' ) {
         $this->ensure_links_manager();
-        $peer_url = $this->trim( $peer_url );
-        if ( '' === $peer_url ) {
-            return array( 'success' => false, 'deleted' => 0, 'message' => 'peerUrl is required' );
+        $peer_url     = $this->trim( $peer_url );
+        $peer_site_id = $this->trim( $peer_site_id );
+        if ( '' === $peer_url && '' === $peer_site_id ) {
+            return array( 'success' => false, 'deleted' => 0, 'message' => 'peerUrl or peerSiteId is required' );
         }
         $deleted = 0;
         foreach ( $this->all_bookmarks() as $b ) {
-            if ( strcasecmp( $this->trim( $b->link_url ), $peer_url ) === 0 ) {
+            $bookmark_peer_id = $this->extract_peer_site_id( (string) ( $b->link_notes ?? '' ) );
+            $matches_peer_id  = '' !== $peer_site_id && $bookmark_peer_id === $peer_site_id;
+            $matches_url      = '' !== $peer_url && $this->same_site_url( $this->trim( $b->link_url ), $peer_url );
+            if ( $matches_peer_id || $matches_url ) {
                 if ( wp_delete_link( (int) $b->link_id ) ) {
                     $deleted++;
                 }
@@ -274,6 +282,54 @@ class WP_AstraHub_Link_Reconcile {
             return (int) $term->term_id;
         }
         return 0;
+    }
+
+    /**
+     * 比对站点 URL，兼容尾斜杠、大小写和主页路径差异。
+     *
+     * @param string $left  URL。
+     * @param string $right URL。
+     * @return bool
+     */
+    private function same_site_url( $left, $right ) {
+        $left_url  = $this->normalize_url( $left, false );
+        $right_url = $this->normalize_url( $right, false );
+        if ( '' !== $left_url && '' !== $right_url && $left_url === $right_url ) {
+            return true;
+        }
+        $left_root  = $this->normalize_url( $left, true );
+        $right_root = $this->normalize_url( $right, true );
+        return '' !== $left_root && '' !== $right_root && $left_root === $right_root;
+    }
+
+    /**
+     * URL 规范化，用于本地友链去重和删除。
+     *
+     * @param string $url       URL。
+     * @param bool   $root_only 是否只保留站点根地址。
+     * @return string
+     */
+    private function normalize_url( $url, $root_only = false ) {
+        $value = $this->trim( $url );
+        if ( '' === $value ) {
+            return '';
+        }
+        if ( ! preg_match( '#^https?://#i', $value ) ) {
+            $value = 'https://' . $value;
+        }
+        $parts = wp_parse_url( $value );
+        if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+            return strtolower( rtrim( $value, "/ \t\n\r\0\x0B" ) );
+        }
+        $scheme = isset( $parts['scheme'] ) ? strtolower( $parts['scheme'] ) : 'https';
+        $host   = strtolower( $parts['host'] );
+        $port   = isset( $parts['port'] ) ? ':' . (int) $parts['port'] : '';
+        if ( $root_only ) {
+            return $scheme . '://' . $host . $port;
+        }
+        $path = isset( $parts['path'] ) ? '/' . ltrim( $parts['path'], '/' ) : '';
+        $path = rtrim( $path, '/' );
+        return $scheme . '://' . $host . $port . $path;
     }
 
     /**

@@ -150,12 +150,14 @@ class WP_AstraHub_Friend_Sync_Service {
             return array( 'success' => false, 'action' => 'skipped', 'message' => 'not registered yet' );
         }
         $current_site_id = trim( (string) $this->credentials->get_credentials()['siteId'] );
-        $peer_url        = $this->resolve_self_cleanup_peer_url( $event, $current_site_id );
-        if ( '' === $peer_url ) {
+        $peer            = $this->resolve_self_cleanup_peer( $event, $current_site_id );
+        $peer_url        = $peer['url'];
+        $peer_site_id    = $peer['siteId'];
+        if ( '' === $peer_url && '' === $peer_site_id ) {
             // 本站既非 actor 也非 peer，不处理（与 Halo 一致）。
             return array( 'success' => true, 'action' => 'skipped', 'message' => 'not actor or peer' );
         }
-        $result = $this->reconcile->delete_by_peer_url( $peer_url );
+        $result = $this->reconcile->delete_by_peer_url( $peer_url, $peer_site_id );
         return array(
             'success' => (bool) $result['success'],
             'action'  => ( isset( $result['deleted'] ) && $result['deleted'] > 0 ) ? 'deleted' : 'skipped',
@@ -206,19 +208,37 @@ class WP_AstraHub_Friend_Sync_Service {
      * @return string
      */
     private function resolve_self_cleanup_peer_url( array $event, $current_site_id ) {
+        $peer = $this->resolve_self_cleanup_peer( $event, $current_site_id );
+        return $peer['url'];
+    }
+
+    /**
+     * 解析 friend_relation_removed 事件中的对端 URL 和 siteId。
+     *
+     * @param array  $event           事件 data。
+     * @param string $current_site_id 本站 siteId。
+     * @return array{url:string,siteId:string}
+     */
+    private function resolve_self_cleanup_peer( array $event, $current_site_id ) {
         $current = trim( (string) $current_site_id );
         if ( '' === $current ) {
-            return '';
+            return array( 'url' => '', 'siteId' => '' );
         }
         $actor_site_id = trim( (string) ( $event['actorSiteId'] ?? '' ) );
         $peer_site_id  = trim( (string) ( $event['peerSiteId'] ?? '' ) );
         if ( $current === $actor_site_id ) {
-            return trim( (string) ( $event['peerSiteUrl'] ?? '' ) );
+            return array(
+                'url'    => trim( (string) ( $event['peerSiteUrl'] ?? '' ) ),
+                'siteId' => $peer_site_id,
+            );
         }
         if ( $current === $peer_site_id ) {
-            return trim( (string) ( $event['actorSiteUrl'] ?? '' ) );
+            return array(
+                'url'    => trim( (string) ( $event['actorSiteUrl'] ?? '' ) ),
+                'siteId' => $actor_site_id,
+            );
         }
-        return '';
+        return array( 'url' => '', 'siteId' => '' );
     }
 
     /**
