@@ -77,3 +77,17 @@
 ## 许可协议
 
 GPLv2 or later。详见 [LICENSE](LICENSE)。
+
+## 界面截图
+
+以下截图用于展示 AstraHub WordPress 插件的后台界面与友链管理状态。
+
+![AstraHub WordPress 截图 1](docs/images/3ac57efd-3571-4039-8503-a0fd93a970f8.png)
+
+![AstraHub WordPress 截图 2](docs/images/4b15891d-f512-4ca3-ba12-80db47447011.png)
+
+![AstraHub WordPress 截图 3](docs/images/9d6d57ae-6afc-441c-a88f-1ab6d0e3e578.png)
+
+![AstraHub WordPress 截图 4](docs/images/a816f888-2720-4970-93e0-1080a3aeb3fa.png)
+
+![AstraHub WordPress 截图 5](docs/images/c855f10c-331a-423f-bc65-ce454ad68f28.png)
