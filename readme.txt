@@ -4,7 +4,7 @@ Tags: friend-links, blogroll, link-exchange, webring, rss
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
-Stable tag: 0.1.5
+Stable tag: 0.1.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -92,6 +92,10 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 == Changelog ==
 
+= 0.1.6 =
+* 修复友链管理待审核邀请“通过 / 拒绝”按钮宽度与其他操作按钮不一致的问题。
+* 操作列布局回到与 Typecho 端一致的自然按钮宽度，避免按钮被固定拉宽。
+
 = 0.1.5 =
 * 修复友链管理待审核邀请在 WordPress 后台缓存旧资源时仍只显示“拒绝”的问题，升级资源版本并固定显示“同意 / 拒绝”双按钮。
 
@@ -120,6 +124,9 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 * 首个版本：站点接入星链网络、友链同步与对账、友链星球浏览、在线交换友链、3D 关系图谱、RSS 资讯聚合、前台吉祥物挂件（可选）。
 
 == Upgrade Notice ==
+
+= 0.1.6 =
+修复友链管理待审核邀请按钮样式，使“通过 / 拒绝”和其他操作按钮保持一致。
 
 = 0.1.5 =
 建议所有 0.1.4 用户升级。此版本刷新后台资源版本，确保友链管理待审核邀请稳定显示“同意 / 拒绝”两个按钮。
