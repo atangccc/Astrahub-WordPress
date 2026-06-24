@@ -96,7 +96,8 @@ class WP_AstraHub_Hub_Client {
         // body 序列化：仅当传入数组时编码为 JSON；GET 等无 body 用空串参与签名。
         $body_string = '';
         if ( null !== $body ) {
-            $body_string = wp_json_encode( $body );
+            $json_body = is_array( $body ) && empty( $body ) ? (object) array() : $body;
+            $body_string = wp_json_encode( $json_body );
             if ( false === $body_string ) {
                 return $this->fail( 400, 'failed to encode request body' );
             }

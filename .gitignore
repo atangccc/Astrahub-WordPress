@@ -1,10 +1,11 @@
 console/node_modules/
+/console/
+/tools/
 /dist/
+DEVELOPMENT.md
 .DS_Store
 Thumbs.db
 *.log
 *.tmp
 *.map
-console/node_modules/.vite-temp/
-console/_halo_conn_style.txt
 build-plugin.ps1

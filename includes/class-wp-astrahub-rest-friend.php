@@ -337,7 +337,7 @@ class WP_AstraHub_Rest_Friend {
         $peer_site_id = (string) $request->get_param( 'peerSiteId' );
         $input        = (array) $request->get_json_params();
         $reason       = trim( (string) ( $input['reason'] ?? '' ) );
-        $payload      = $reason !== '' ? array( 'reason' => $reason ) : array();
+        $payload      = array( 'reason' => $reason );
         $path         = '/v1/friend-relations/' . rawurlencode( $peer_site_id ) . '/remove';
         $response     = $this->hub_client->request_signed( 'POST', $path, $payload );
         if ( ! $response['success'] ) {

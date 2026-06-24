@@ -4,7 +4,7 @@ Tags: friend-links, blogroll, link-exchange, webring, rss
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -92,10 +92,19 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 == Changelog ==
 
+= 0.1.1 =
+* Fix friend relation removal failing with `invalid request body` when the removal reason is empty.
+* Fix realtime token requests returning 401 because the signed body did not match the Hub endpoint.
+* Fix the latest sync status panel not showing the stored server-side status.
+* Show the most recent sync attempt time instead of keeping the previous successful push time.
+
 = 0.1.0 =
 * 首个版本：站点接入星链网络、友链同步与对账、友链星球浏览、在线交换友链、3D 关系图谱、RSS 资讯聚合、前台吉祥物挂件（可选）。
 
 == Upgrade Notice ==
+
+= 0.1.1 =
+Recommended update for all 0.1.0 users. Fixes friend relation removal, realtime token authentication, and latest sync status display.
 
 = 0.1.0 =
 首个公开版本。

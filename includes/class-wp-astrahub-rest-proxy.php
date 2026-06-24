@@ -350,10 +350,14 @@ class WP_AstraHub_Rest_Proxy {
         if ( ! $this->push_service ) {
             return new WP_REST_Response( array( 'success' => false, 'message' => 'push service unavailable' ), 500 );
         }
+        $status = $this->push_service->get_report_status();
+        if ( ! empty( $status['updatedAt'] ) ) {
+            $status['pushedAt'] = $status['updatedAt'];
+        }
         return new WP_REST_Response(
             array(
                 'success' => true,
-                'status'  => $this->push_service->get_report_status(),
+                'data'    => array( 'status' => $status ),
             ),
             200
         );
@@ -371,7 +375,7 @@ class WP_AstraHub_Rest_Proxy {
         if ( ! $this->credentials->is_registered() ) {
             return $this->not_registered();
         }
-        $response = $this->hub_client->request_signed( 'POST', '/v1/ws-token', array() );
+        $response = $this->hub_client->request_signed( 'POST', '/v1/ws-token', null );
         if ( ! $response['success'] ) {
             $status = $response['status'] >= 400 && $response['status'] < 600 ? $response['status'] : 502;
             return new WP_REST_Response(
