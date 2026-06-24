@@ -93,10 +93,10 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 == Changelog ==
 
 = 0.1.1 =
-* Fix friend relation removal failing with `invalid request body` when the removal reason is empty.
-* Fix realtime token requests returning 401 because the signed body did not match the Hub endpoint.
-* Fix the latest sync status panel not showing the stored server-side status.
-* Show the most recent sync attempt time instead of keeping the previous successful push time.
+* 修复解除友链时解除原因为空会导致 Hub 返回 `invalid request body` 的问题。
+* 修复实时连接令牌接口因为签名请求体不一致导致 401 的问题。
+* 修复“最近同步”面板读取不到服务端已保存同步状态的问题。
+* 调整“最近同步”时间展示，优先显示最近一次同步尝试的更新时间。
 
 = 0.1.0 =
 * 首个版本：站点接入星链网络、友链同步与对账、友链星球浏览、在线交换友链、3D 关系图谱、RSS 资讯聚合、前台吉祥物挂件（可选）。
@@ -104,7 +104,7 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 == Upgrade Notice ==
 
 = 0.1.1 =
-Recommended update for all 0.1.0 users. Fixes friend relation removal, realtime token authentication, and latest sync status display.
+建议所有 0.1.0 用户升级。此版本修复解除友链、实时连接令牌鉴权和最近同步状态显示问题。
 
 = 0.1.0 =
 首个公开版本。

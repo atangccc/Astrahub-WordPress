@@ -1,13 +1,13 @@
-# Changelog
+# 更新日志
 
 ## 0.1.1 - 2026-06-24
 
-- Fixed friend relation removal failing with `invalid request body` when the removal reason is empty.
-- Fixed realtime token requests returning `401 Unauthorized` because the signed body did not match the Hub endpoint.
-- Fixed the latest sync status panel not showing the server-side stored status.
-- Updated latest sync time display to reflect the most recent sync attempt.
-- Prepared the repository for public release by excluding local development notes and tooling from version control.
+- 修复解除友链时解除原因为空会被编码成错误请求体，导致 Hub 返回 `invalid request body` 的问题。
+- 修复实时连接令牌接口因为签名请求体不一致导致 `/realtime/token` 返回 `401 Unauthorized` 的问题。
+- 修复“最近同步”面板读取不到服务端已保存同步状态的问题。
+- 调整“最近同步”时间展示，优先显示最近一次同步尝试的更新时间。
+- 清理 GitHub 仓库中的开发文档、前端源码和本地工具文件，只保留插件运行与发布所需文件。
 
 ## 0.1.0
 
-- Initial public release.
+- 首个公开版本。
