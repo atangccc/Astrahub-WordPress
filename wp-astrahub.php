@@ -3,7 +3,7 @@
  * Plugin Name:       AstraHub 星链
  * Plugin URI:        https://www.aobp.cn/
  * Description:        把站点接入 AstraHub 星链——独立博客的连接层：整合多生态博主、在线交换友链、沿关系图谱发现同好圈子。
- * Version:           0.1.7
+ * Version:           0.1.8
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            Serenity
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // 禁止直接访问
 }
 
-define( 'WP_ASTRAHUB_VERSION', '0.1.7' );
+define( 'WP_ASTRAHUB_VERSION', '0.1.8' );
 define( 'WP_ASTRAHUB_FILE', __FILE__ );
 define( 'WP_ASTRAHUB_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP_ASTRAHUB_URL', plugin_dir_url( __FILE__ ) );
