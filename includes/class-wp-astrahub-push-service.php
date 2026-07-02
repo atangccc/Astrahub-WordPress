@@ -125,12 +125,14 @@ class WP_AstraHub_Push_Service {
             'pushedAt'  => $success ? $now : $this->get_report_status()['pushedAt'],
             'updatedAt' => $now,
         );
-        update_option( self::OPTION_REPORT, $report, false );
+        update_option( self::OPTION_REPORT, $report );
         return array(
-            'success'  => $success,
-            'status'   => $status,
-            'message'  => $message,
-            'pushedAt' => $report['pushedAt'],
+            'success'   => $success,
+            'status'    => $status,
+            'message'   => $message,
+            'pushedAt'  => $report['pushedAt'],
+            'updatedAt' => $report['updatedAt'],
+            'trigger'   => $report['trigger'],
         );
     }
 }

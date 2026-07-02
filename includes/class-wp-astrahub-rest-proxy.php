@@ -317,51 +317,55 @@ class WP_AstraHub_Rest_Proxy {
         return $this->passthrough( $response );
     }
 
-    /**
-     * 立即推送图谱。
-     *
-     * @param WP_REST_Request $request 请求。
-     * @return WP_REST_Response
-     */
-    public function handle_push_graph( WP_REST_Request $request ) {
-        if ( ! $this->push_service ) {
-            return new WP_REST_Response( array( 'success' => false, 'message' => 'push service unavailable' ), 500 );
-        }
-        $reason = (string) ( $request->get_param( 'reason' ) ?: 'manual' );
-        $result = $this->push_service->push_graph( $reason );
-        $http   = $result['success'] ? 200 : ( $result['status'] >= 400 && $result['status'] < 600 ? $result['status'] : 502 );
-        return new WP_REST_Response(
-            array(
-                'success'  => $result['success'],
-                'status'   => $result['status'],
-                'message'  => $result['message'],
-                'pushedAt' => $result['pushedAt'],
-            ),
-            $http
-        );
-    }
+	/**
+	 * 立即推送图谱。
+	 *
+	 * 推送前先执行一次反向对账（如有），确保本地 wp_links 包含 Hub 侧的所有边，
+	 * 避免全量快照覆盖掉由其他方式在 Hub 上建立的关系。
+	 *
+	 * @param WP_REST_Request $request 请求。
+	 * @return WP_REST_Response
+	 */
+	public function handle_push_graph( WP_REST_Request $request ) {
+		if ( ! $this->push_service ) {
+			return new WP_REST_Response( array( 'success' => false, 'message' => 'push service unavailable' ), 500 );
+		}
+		// 推送前先反向对账，确保本地有 Hub 侧所有边。
+		if ( $this->friend_sync ) {
+			$this->friend_sync->reconcile( 'pre-push' );
+		}
+		$reason = (string) ( $request->get_param( 'reason' ) ?: 'manual' );
+		$result = $this->push_service->push_graph( $reason );
+		$http   = $result['success'] ? 200 : ( $result['status'] >= 400 && $result['status'] < 600 ? $result['status'] : 502 );
+		return new WP_REST_Response(
+			array(
+				'success'  => $result['success'],
+				'status'   => $result['status'],
+				'message'  => $result['message'],
+				'pushedAt' => $result['pushedAt'],
+			),
+			$http
+		);
+	}
 
-    /**
-     * 读取最近同步状态。
-     *
-     * @return WP_REST_Response
-     */
-    public function handle_report_status() {
-        if ( ! $this->push_service ) {
-            return new WP_REST_Response( array( 'success' => false, 'message' => 'push service unavailable' ), 500 );
-        }
-        $status = $this->push_service->get_report_status();
-        if ( ! empty( $status['updatedAt'] ) ) {
-            $status['pushedAt'] = $status['updatedAt'];
-        }
-        return new WP_REST_Response(
-            array(
-                'success' => true,
-                'data'    => array( 'status' => $status ),
-            ),
-            200
-        );
-    }
+	/**
+	 * 读取最近同步状态。
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function handle_report_status() {
+		if ( ! $this->push_service ) {
+			return new WP_REST_Response( array( 'success' => false, 'message' => 'push service unavailable' ), 500 );
+		}
+		$status = $this->push_service->get_report_status();
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'data'    => array( 'status' => $status ),
+			),
+			200
+		);
+	}
 
     /**
      * 签发实时连接票据：签名转发 Hub POST /v1/ws-token，返回一次性短期 token。

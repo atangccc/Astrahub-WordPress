@@ -51,16 +51,19 @@ class WP_AstraHub_Cron {
         }
     }
 
-    /**
-     * cron 执行体：登舱后推送友链快照，并反向对账本地友链。
-     */
-    public function run() {
-        $this->push_service->push_graph( 'cron' );
-        // 链路 B：拉取 Hub 关系并对账本地友链（删除已失效、刷新资料变更）。
-        if ( $this->friend_sync ) {
-            $this->friend_sync->reconcile( 'cron' );
-        }
-    }
+	/**
+	 * cron 执行体：先反向对账拉回 Hub 侧关系（保证本地包含 Hub 上所有边），
+	 * 再推送全量友链快照（避免快照覆盖掉 Hub 上由其他方式建立的关系）。
+	 */
+	public function run() {
+		// 链路 B：先拉取 Hub 关系并对账本地友链（删除已失效、刷新资料变更、
+		// 补全 Hub 侧有但本地缺少的边），确保本地 wp_links 是 Hub 的超集。
+		if ( $this->friend_sync ) {
+			$this->friend_sync->reconcile( 'cron' );
+		}
+		// 再推送全量友链快照到 Hub。
+		$this->push_service->push_graph( 'cron' );
+	}
 
     /**
      * 卸载时清理调度（由插件停用钩子调用）。
