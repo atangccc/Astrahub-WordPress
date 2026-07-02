@@ -55,7 +55,7 @@ class WP_AstraHub_Register_Service {
     public function register( array $input ) {
         $errors = $this->validate_register_fields( $input );
         if ( ! empty( $errors ) ) {
-            return $this->fail( 400, $errors[0] );
+            return $this->fail( 400, '请填写所有必填字段', $errors );
         }
 
         $headers = array();
@@ -79,7 +79,7 @@ class WP_AstraHub_Register_Service {
     public function request_invitation( array $input ) {
         $contact_email = isset( $input['contactEmail'] ) ? trim( (string) $input['contactEmail'] ) : '';
         if ( '' === $contact_email ) {
-            return $this->fail( 400, 'contactEmail is required' );
+            return $this->fail( 400, '联系邮箱不能为空', array( 'contactEmail' => '联系邮箱不能为空' ) );
         }
 
         $payload = array( 'contactEmail' => $contact_email );
@@ -93,7 +93,7 @@ class WP_AstraHub_Register_Service {
         if ( $response['success'] ) {
             return $this->ok(
                 $response['status'],
-                'code sent to mailbox',
+                '验证码已发送至邮箱',
                 array(
                     'expiresAt'     => $this->str( $response['body'], 'expiresAt' ),
                     'cooldownUntil' => $this->str( $response['body'], 'cooldownUntil' ),
@@ -112,11 +112,11 @@ class WP_AstraHub_Register_Service {
     public function register_with_invitation( array $input ) {
         $code = isset( $input['invitationCode'] ) ? trim( (string) $input['invitationCode'] ) : '';
         if ( '' === $code ) {
-            return $this->fail( 400, 'invitationCode is required' );
+            return $this->fail( 400, '邀请码不能为空', array( 'invitationCode' => '邀请码不能为空' ) );
         }
         $errors = $this->validate_register_fields( $input );
         if ( ! empty( $errors ) ) {
-            return $this->fail( 400, $errors[0] );
+            return $this->fail( 400, '请填写所有必填字段', $errors );
         }
 
         $payload  = $this->build_register_payload( $input );
@@ -135,7 +135,7 @@ class WP_AstraHub_Register_Service {
     public function send_boarding_code( array $input ) {
         $contact_email = isset( $input['contactEmail'] ) ? trim( (string) $input['contactEmail'] ) : '';
         if ( '' === $contact_email ) {
-            return $this->fail( 400, 'contactEmail is required' );
+            return $this->fail( 400, '联系邮箱不能为空', array( 'contactEmail' => '联系邮箱不能为空' ) );
         }
 
         $payload  = array( 'contactEmail' => $contact_email );
@@ -144,7 +144,7 @@ class WP_AstraHub_Register_Service {
         if ( $response['success'] ) {
             return $this->ok(
                 $response['status'],
-                'boarding code sent',
+                '验证码已发送',
                 array( 'expiresAt' => $this->str( $response['body'], 'expiresAt' ) )
             );
         }
@@ -161,10 +161,10 @@ class WP_AstraHub_Register_Service {
         $contact_email = isset( $input['contactEmail'] ) ? trim( (string) $input['contactEmail'] ) : '';
         $code          = isset( $input['code'] ) ? trim( (string) $input['code'] ) : '';
         if ( '' === $contact_email ) {
-            return $this->fail( 400, 'contactEmail is required' );
+            return $this->fail( 400, '联系邮箱不能为空', array( 'contactEmail' => '联系邮箱不能为空' ) );
         }
         if ( '' === $code ) {
-            return $this->fail( 400, 'code is required' );
+            return $this->fail( 400, '验证码不能为空', array( 'code' => '验证码不能为空' ) );
         }
 
         $payload = array(
@@ -181,7 +181,7 @@ class WP_AstraHub_Register_Service {
         $site_id = $this->str( $body, 'siteId' );
         $api_key = $this->str( $body, 'apiKey' );
         if ( '' === $site_id || '' === $api_key ) {
-            return $this->fail( $response['status'], 'restore response missing siteId/apiKey' );
+            return $this->fail( $response['status'], '恢复响应中缺少 siteId/apiKey' );
         }
 
         $this->persist_identity( $body );
@@ -206,30 +206,30 @@ class WP_AstraHub_Register_Service {
 
         return $this->ok(
             $response['status'],
-            'restored',
+            '已恢复登舱',
             $this->credentials->get_credentials()
         );
     }
 
     /**
-     * 校验注册必填字段，返回错误信息数组（空数组表示通过）。
+     * 校验注册必填字段，返回字段级错误（空数组表示通过）。
      *
      * @param array $input 输入。
-     * @return string[]
+     * @return array<string,string> 字段名 => 中文错误提示。
      */
     private function validate_register_fields( array $input ) {
         $errors   = array();
         $required = array(
-            'siteName'       => 'siteName is required',
-            'siteUrl'        => 'siteUrl is required',
-            'contactEmail'   => 'contactEmail is required',
-            'siteNodeName'   => 'siteNodeName is required',
-            'siteNodeAvatar' => 'siteNodeAvatar is required',
+            'siteName'       => '站点名称不能为空',
+            'siteUrl'        => '站点 URL 不能为空',
+            'contactEmail'   => '联系邮箱不能为空',
+            'siteNodeName'   => '星链节点名不能为空',
+            'siteNodeAvatar' => '星链头像链接不能为空',
         );
         foreach ( $required as $key => $message ) {
             $value = isset( $input[ $key ] ) ? trim( (string) $input[ $key ] ) : '';
             if ( '' === $value ) {
-                $errors[] = $message;
+                $errors[ $key ] = $message;
             }
         }
         return $errors;
@@ -271,7 +271,7 @@ class WP_AstraHub_Register_Service {
         $site_id = $this->str( $body, 'siteId' );
         $api_key = $this->str( $body, 'apiKey' );
         if ( '' === $site_id || '' === $api_key ) {
-            return $this->fail( $response['status'], 'register response missing siteId/apiKey' );
+            return $this->fail( $response['status'], '注册响应中缺少 siteId/apiKey' );
         }
 
         $this->persist_identity( $body );
@@ -292,7 +292,7 @@ class WP_AstraHub_Register_Service {
 
         return $this->ok(
             $response['status'],
-            'registered',
+            '注册成功',
             $this->credentials->get_credentials()
         );
     }
@@ -351,16 +351,21 @@ class WP_AstraHub_Register_Service {
     /**
      * 失败结果。
      *
-     * @param int    $status  状态。
-     * @param string $message 信息。
+     * @param int    $status  状态码。
+     * @param string $message 错误摘要。
+     * @param array  $fields  字段级错误（字段名 => 中文提示），可选。
      * @return array
      */
-    private function fail( $status, $message ) {
-        return array(
+    private function fail( $status, $message, array $fields = array() ) {
+        $result = array(
             'success' => false,
             'status'  => $status ? $status : 400,
-            'message' => $message ? $message : 'request failed',
+            'message' => $message ? $message : '请求失败，请重试',
             'data'    => array(),
         );
+        if ( ! empty( $fields ) ) {
+            $result['fields'] = $fields;
+        }
+        return $result;
     }
 }

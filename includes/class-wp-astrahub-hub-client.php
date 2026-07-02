@@ -99,7 +99,7 @@ class WP_AstraHub_Hub_Client {
             $json_body = is_array( $body ) && empty( $body ) ? (object) array() : $body;
             $body_string = wp_json_encode( $json_body );
             if ( false === $body_string ) {
-                return $this->fail( 400, 'failed to encode request body' );
+                return $this->fail( 400, '请求体编码失败' );
             }
         }
 
@@ -115,7 +115,7 @@ class WP_AstraHub_Hub_Client {
             $site_id = trim( $creds['siteId'] );
             $api_key = trim( $creds['apiKey'] );
             if ( '' === $site_id || '' === $api_key ) {
-                return $this->fail( 400, 'missing credentials (siteId/apiKey); please register first' );
+                return $this->fail( 400, '缺少凭据（siteId/apiKey），请先注册站点' );
             }
             // 签名 PATH 用解码后的路径，不含 query。
             $signed_fields   = WP_AstraHub_Hub_Signer::sign_request( $method, $path, $body_string, $site_id, $api_key );
@@ -142,7 +142,7 @@ class WP_AstraHub_Hub_Client {
         $response = wp_remote_request( $url, $args );
 
         if ( is_wp_error( $response ) ) {
-            return $this->fail( 502, 'request error: ' . $response->get_error_message() );
+            return $this->fail( 502, '网络请求错误：' . $response->get_error_message() );
         }
 
         $status = (int) wp_remote_retrieve_response_code( $response );
@@ -172,25 +172,41 @@ class WP_AstraHub_Hub_Client {
     }
 
     /**
-     * 从响应体提取错误信息。
+     * 从响应体提取错误信息（含中文错误码映射）。
      *
      * @param array $body   解析后的响应体。
      * @param int   $status 状态码。
      * @return string
      */
     private function extract_error_message( array $body, $status ) {
+        $code    = '';
+        $message = '';
+
+        // Hub 标准格式：{ "error": { "code": "...", "message": "..." } }
         if ( isset( $body['error'] ) ) {
             if ( is_string( $body['error'] ) ) {
-                return $body['error'];
-            }
-            if ( is_array( $body['error'] ) && isset( $body['error']['message'] ) && is_string( $body['error']['message'] ) ) {
-                return $body['error']['message'];
+                $message = $body['error'];
+            } elseif ( is_array( $body['error'] ) ) {
+                $code    = isset( $body['error']['code'] ) ? (string) $body['error']['code'] : '';
+                $message = isset( $body['error']['message'] ) ? (string) $body['error']['message'] : '';
             }
         }
-        if ( isset( $body['message'] ) && is_string( $body['message'] ) ) {
+
+        // 优先用错误码映射；无映射则用原始 message 或状态码兜底
+        if ( '' !== $code ) {
+            return WP_AstraHub_Error_Codes::describe( $code, $message );
+        }
+
+        if ( '' !== $message ) {
+            return $message;
+        }
+
+        // 兜底：body 顶层 message
+        if ( isset( $body['message'] ) && is_string( $body['message'] ) && '' !== trim( $body['message'] ) ) {
             return $body['message'];
         }
-        return 'request failed with status ' . $status;
+
+        return '请求失败（HTTP ' . $status . '），请检查 Hub 地址配置或网络连接';
     }
 
     /**

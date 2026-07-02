@@ -288,7 +288,7 @@ class WP_AstraHub_Rest_Register {
         return new WP_REST_Response(
             array(
                 'success'    => true,
-                'message'    => 'connection saved',
+                'message'    => '连接配置已保存',
                 'connection' => $this->credentials->get_connection(),
             ),
             200
@@ -305,7 +305,7 @@ class WP_AstraHub_Rest_Register {
         return new WP_REST_Response(
             array(
                 'success' => true,
-                'message' => 'logged out',
+                'message' => '已登出',
             ),
             200
         );
@@ -348,15 +348,17 @@ class WP_AstraHub_Rest_Register {
         $status = isset( $result['status'] ) ? (int) $result['status'] : ( $result['success'] ? 200 : 400 );
         // 统一对外用 200 包裹业务状态，避免前端 fetch 误判 HTTP 层错误。
         $http_status = $result['success'] ? 200 : ( $status >= 400 && $status < 600 ? $status : 400 );
-        return new WP_REST_Response(
-            array(
-                'success' => (bool) $result['success'],
-                'status'  => $status,
-                'message' => isset( $result['message'] ) ? $result['message'] : '',
-                'data'    => isset( $result['data'] ) ? $result['data'] : array(),
-            ),
-            $http_status
+        $response = array(
+            'success' => (bool) $result['success'],
+            'status'  => $status,
+            'message' => isset( $result['message'] ) ? $result['message'] : '',
+            'data'    => isset( $result['data'] ) ? $result['data'] : array(),
         );
+        // 字段级错误透传（用于前端高亮）
+        if ( ! empty( $result['fields'] ) ) {
+            $response['fields'] = $result['fields'];
+        }
+        return new WP_REST_Response( $response, $http_status );
     }
 
     /**
