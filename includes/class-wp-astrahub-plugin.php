@@ -208,7 +208,7 @@ class WP_AstraHub_Plugin {
                 'wp-astrahub-admin',
                 WP_ASTRAHUB_URL . 'assets/dist/wp-astrahub-admin.js',
                 array(),
-                WP_ASTRAHUB_VERSION,
+                filemtime( $js ),
                 true
             );
         }
@@ -217,7 +217,7 @@ class WP_AstraHub_Plugin {
                 'wp-astrahub-admin',
                 WP_ASTRAHUB_URL . 'assets/dist/wp-astrahub-admin.css',
                 array(),
-                WP_ASTRAHUB_VERSION
+                filemtime( $css )
             );
         }
     }
