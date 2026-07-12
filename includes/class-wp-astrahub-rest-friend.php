@@ -141,14 +141,25 @@ class WP_AstraHub_Rest_Friend {
         if ( ! $this->credentials->is_registered() ) {
             return $this->not_registered();
         }
-        $box    = $request->get_param( 'box' ) === 'outbox' ? 'outbox' : 'inbox';
+        $tab    = trim( (string) $request->get_param( 'tab' ) );
+        if ( '' === $tab ) {
+            $tab = $request->get_param( 'box' ) === 'outbox' ? 'outbox' : 'inbox';
+        }
+        if ( ! in_array( $tab, array( 'all', 'inbox', 'outbox' ), true ) ) {
+            $tab = 'all';
+        }
         $status = trim( (string) $request->get_param( 'status' ) );
-        $query  = array();
+        $limit  = max( 1, min( 100, (int) ( $request->get_param( 'limit' ) ?: 20 ) ) );
+        $offset = max( 0, (int) $request->get_param( 'offset' ) );
+        $query  = array(
+            'tab'    => $tab,
+            'limit'  => (string) $limit,
+            'offset' => (string) $offset,
+        );
         if ( '' !== $status ) {
             $query['status'] = $status;
         }
-        $path     = 'inbox' === $box ? '/v1/friend-invitations/inbox' : '/v1/friend-invitations/outbox';
-        $response = $this->hub_client->request_signed( 'GET', $path, null, array(), $query );
+        $response = $this->hub_client->request_signed( 'GET', '/v1/friend-invitations/overview', null, array(), $query );
         if ( ! $response['success'] ) {
             return $this->fail( $response['status'], $response['message'] );
         }

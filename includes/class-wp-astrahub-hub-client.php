@@ -147,6 +147,10 @@ class WP_AstraHub_Hub_Client {
 
         $status = (int) wp_remote_retrieve_response_code( $response );
         $raw    = (string) wp_remote_retrieve_body( $response );
+        $content_type = strtolower( trim( (string) wp_remote_retrieve_header( $response, 'content-type' ) ) );
+        if ( false !== strpos( $content_type, ';' ) ) {
+            $content_type = trim( strtok( $content_type, ';' ) );
+        }
         $parsed = json_decode( $raw, true );
         if ( ! is_array( $parsed ) ) {
             $parsed = array();
@@ -158,6 +162,7 @@ class WP_AstraHub_Hub_Client {
                 'status'  => $status,
                 'body'    => $parsed,
                 'raw'     => $raw,
+                'contentType' => $content_type,
                 'message' => '',
             );
         }
@@ -167,6 +172,7 @@ class WP_AstraHub_Hub_Client {
             'status'  => $status,
             'body'    => $parsed,
             'raw'     => $raw,
+            'contentType' => $content_type,
             'message' => $this->extract_error_message( $parsed, $status ),
         );
     }
@@ -222,6 +228,7 @@ class WP_AstraHub_Hub_Client {
             'status'  => $status,
             'body'    => array(),
             'raw'     => '',
+            'contentType' => '',
             'message' => $message,
         );
     }

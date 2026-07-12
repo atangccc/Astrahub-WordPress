@@ -68,6 +68,7 @@ class WP_AstraHub_Rest_Proxy {
         '/v1/friend-invitations',
         '/v1/friend-relations/',
         '/v1/relations/',
+        '/v1/world-chat/',
         '/v1/sites/lookup',
     );
 
@@ -174,6 +175,16 @@ class WP_AstraHub_Rest_Proxy {
                 'methods'             => 'POST',
                 'permission_callback' => $permission,
                 'callback'            => array( $this, 'handle_realtime_token' ),
+            )
+        );
+
+        register_rest_route(
+            WP_AstraHub_Rest_Register::NAMESPACE,
+            '/world-chat/stickers/(?P<id>[A-Za-z0-9_-]+)/file',
+            array(
+                'methods'             => 'GET',
+                'permission_callback' => $permission,
+                'callback'            => array( $this, 'handle_world_chat_sticker_file' ),
             )
         );
 
@@ -399,6 +410,42 @@ class WP_AstraHub_Rest_Proxy {
             ),
             200
         );
+    }
+
+    /**
+     * 同源转发世界频道表情文件，避免向浏览器暴露站点签名凭据。
+     *
+     * @param WP_REST_Request $request 请求。
+     * @return void|WP_REST_Response
+     */
+    public function handle_world_chat_sticker_file( WP_REST_Request $request ) {
+        if ( ! $this->credentials->is_registered() ) {
+            return $this->not_registered();
+        }
+        $sticker_id = trim( (string) $request->get_param( 'id' ) );
+        if ( '' === $sticker_id || ! preg_match( '/^[A-Za-z0-9_-]+$/', $sticker_id ) ) {
+            return new WP_REST_Response( array( 'success' => false, 'message' => 'invalid sticker id' ), 400 );
+        }
+        $path = '/v1/world-chat/stickers/' . rawurlencode( $sticker_id ) . '/file';
+        $response = $this->hub_client->request_signed( 'GET', $path );
+        if ( ! $response['success'] || '' === $response['raw'] ) {
+            return new WP_REST_Response( array( 'success' => false, 'message' => $response['message'] ), 502 );
+        }
+        $mime = isset( $response['contentType'] ) ? strtolower( trim( (string) $response['contentType'] ) ) : '';
+        if ( 0 !== strpos( $mime, 'image/' ) && function_exists( 'finfo_buffer' ) ) {
+            $finfo = finfo_open( FILEINFO_MIME_TYPE );
+            if ( false !== $finfo ) {
+                $detected = finfo_buffer( $finfo, $response['raw'] );
+                finfo_close( $finfo );
+                if ( is_string( $detected ) && 0 === strpos( $detected, 'image/' ) ) {
+                    $mime = $detected;
+                }
+            }
+        }
+        if ( 0 !== strpos( $mime, 'image/' ) ) {
+            return new WP_REST_Response( array( 'success' => false, 'message' => 'invalid sticker payload' ), 502 );
+        }
+        $this->emit_binary( $mime, $response['raw'], 'private, max-age=3600' );
     }
 
     /**
