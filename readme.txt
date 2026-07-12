@@ -4,7 +4,7 @@ Tags: friend-links, blogroll, link-exchange, webring, rss
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
-Stable tag: 0.1.11
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -91,6 +91,12 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 4. 接入配置：站点接入、同步状态与前台显示开关。
 
 == Changelog ==
+
+= 0.2.0 =
+* 重构星际通讯面板界面，与 Halo 端界面逻辑和视觉风格完全对齐：新增星链成员侧栏、首次使用同意门、提及/引用快捷菜单、成员资料弹窗、表情包管理等。
+* 重构友链列表请求：后端统一使用 `/v1/friend-invitations/overview` 端点，新增参数校验；前端对齐分页参数行为。
+* 统一世界频道 API 请求模式，使用通用签名代理（`/hub/get`、`/hub/post`）。
+* 修复世界频道传输协议字段提取，确保贴图文件 contentType 正确渲染。
 
 = 0.1.7 =
 * 修复“全部”筛选中同一邀请同时出现在 inbox/outbox 时方向被覆盖，导致待审核邀请操作异常的问题。

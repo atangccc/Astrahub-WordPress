@@ -132,7 +132,7 @@ class WP_AstraHub_Rest_Friend {
     }
 
     /**
-     * 收发件箱列表。
+     * 收发件箱列表（支持 tab 视图和分页）。
      *
      * @param WP_REST_Request $request 请求。
      * @return WP_REST_Response
@@ -151,6 +151,7 @@ class WP_AstraHub_Rest_Friend {
         $status = trim( (string) $request->get_param( 'status' ) );
         $limit  = max( 1, min( 100, (int) ( $request->get_param( 'limit' ) ?: 20 ) ) );
         $offset = max( 0, (int) $request->get_param( 'offset' ) );
+<<<<<<< HEAD
         $query  = array(
             'tab'    => $tab,
             'limit'  => (string) $limit,
@@ -160,6 +161,26 @@ class WP_AstraHub_Rest_Friend {
             $query['status'] = $status;
         }
         $response = $this->hub_client->request_signed( 'GET', '/v1/friend-invitations/overview', null, array(), $query );
+=======
+        if ( 'all' === $tab ) {
+            $path = '/v1/friend-invitations/all';
+        } elseif ( 'outbox' === $tab ) {
+            $path = '/v1/friend-invitations/outbox';
+        } else {
+            $path = '/v1/friend-invitations/inbox';
+        }
+        $query  = array();
+        if ( '' !== $status ) {
+            $query['status'] = $status;
+        }
+        if ( $limit > 0 ) {
+            $query['limit'] = (string) $limit;
+        }
+        if ( $offset > 0 ) {
+            $query['offset'] = (string) $offset;
+        }
+        $response = $this->hub_client->request_signed( 'GET', $path, null, array(), $query );
+>>>>>>> b3043e4561b7c71fc07db20c18ef7aabda8b5aa6
         if ( ! $response['success'] ) {
             return $this->fail( $response['status'], $response['message'] );
         }

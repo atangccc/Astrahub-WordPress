@@ -70,6 +70,7 @@ class WP_AstraHub_Rest_Proxy {
         '/v1/relations/',
         '/v1/world-chat/',
         '/v1/sites/lookup',
+        '/v1/world-chat/',
     );
 
     /**
@@ -234,6 +235,28 @@ class WP_AstraHub_Rest_Proxy {
                 'methods'             => 'POST',
                 'permission_callback' => $permission,
                 'callback'            => array( $this, 'handle_friend_sync_peer' ),
+            )
+        );
+
+        // 世界频道表情文件代理：同源代理 Hub 上的 sticker 图片文件。
+        register_rest_route(
+            WP_AstraHub_Rest_Register::NAMESPACE,
+            '/world-chat/stickers/(?P<stickerId>[^/]+)/file',
+            array(
+                'methods'             => 'GET',
+                'permission_callback' => $permission,
+                'callback'            => array( $this, 'handle_world_chat_sticker_file' ),
+            )
+        );
+
+        // 通用资源代理：前端 restResourceUrl 的同源代理端点，透传 Hub 资源文件。
+        register_rest_route(
+            WP_AstraHub_Rest_Register::NAMESPACE,
+            '/hub/resource',
+            array(
+                'methods'             => 'GET',
+                'permission_callback' => $permission,
+                'callback'            => array( $this, 'handle_hub_resource' ),
             )
         );
 
@@ -667,6 +690,81 @@ class WP_AstraHub_Rest_Proxy {
             ),
             $http_status
         );
+    }
+
+    /**
+     * 世界频道表情文件代理：服务端从 Hub 拉取 sticker 图片后同源回传。
+     *
+     * @param WP_REST_Request $request 请求。
+     * @return void
+     */
+    public function handle_world_chat_sticker_file( WP_REST_Request $request ) {
+        if ( ! $this->credentials->is_registered() ) {
+            wp_die( 'not registered', 400 );
+        }
+        $sticker_id = rawurldecode( (string) $request->get_param( 'stickerId' ) );
+        if ( '' === $sticker_id ) {
+            wp_die( 'invalid sticker id', 400 );
+        }
+        $response = $this->hub_client->request_signed(
+            'GET',
+            '/v1/world-chat/stickers/' . rawurlencode( $sticker_id ) . '/file'
+        );
+        if ( ! $response['success'] ) {
+            wp_die( 'sticker not found', 404 );
+        }
+        $content_type = isset( $response['contentType'] )
+            ? (string) $response['contentType']
+            : 'image/png';
+        $raw_data = isset( $response['body']['data'] ) ? (string) $response['body']['data'] : '';
+        if ( '' === $raw_data ) {
+            $this->blank_avatar_response();
+            return;
+        }
+        $bytes = base64_decode( $raw_data, true );
+        if ( false === $bytes || '' === $bytes ) {
+            $this->blank_avatar_response();
+            return;
+        }
+        $this->emit_binary( $content_type, $bytes, 'public, max-age=3600' );
+    }
+
+    /**
+     * 通用资源代理：前端 restResourceUrl 指向此法，服务端从 Hub 拉取资源后同源回传。
+     * URL 格式：/hub/resource?url=/v1/world-chat/stickers/{id}/file
+     * 安全：url 必须是以 /v1/ 开头的已注册路径（复用 is_allowed_path 校验）。
+     *
+     * @param WP_REST_Request $request 请求。
+     * @return void
+     */
+    public function handle_hub_resource( WP_REST_Request $request ) {
+        if ( ! $this->credentials->is_registered() ) {
+            wp_die( 'not registered', 400 );
+        }
+        $hub_path = trim( (string) $request->get_param( 'url' ) );
+        if ( '' === $hub_path || ! $this->is_allowed_path( $hub_path ) ) {
+            wp_die( 'path not allowed', 403 );
+        }
+        $response = $this->hub_client->request_signed( 'GET', $hub_path );
+        if ( ! $response['success'] ) {
+            $this->blank_avatar_response();
+            return;
+        }
+        $content_type = isset( $response['contentType'] )
+            ? (string) $response['contentType']
+            : 'application/octet-stream';
+        $raw_data = isset( $response['body']['data'] ) ? (string) $response['body']['data'] : '';
+        if ( '' === $raw_data ) {
+            $this->blank_avatar_response();
+            return;
+        }
+        $bytes = base64_decode( $raw_data, true );
+        if ( false === $bytes || '' === $bytes ) {
+            $this->blank_avatar_response();
+            return;
+        }
+        $cache = ( 0 === strpos( $content_type, 'image/' ) ) ? 'public, max-age=3600' : 'no-store';
+        $this->emit_binary( $content_type, $bytes, $cache );
     }
 
     /**
