@@ -72,19 +72,22 @@ async function request<T>(
   query?: Record<string, string>
 ): Promise<ApiEnvelope<T>> {
   const b = bootstrap();
-  let url = `${b.restBase}${path}`;
-  if (query && Object.keys(query).length > 0) {
-    const qs = new URLSearchParams(query).toString();
-    url += (url.includes("?") ? "&" : "?") + qs;
+  const qs = new URLSearchParams(query ?? {});
+  // 额外把 nonce 塞进查询参数（?_wpnonce），绕过宝塔/Nginx WAF 对 X-WP-Nonce header 的特定路径拦截。
+  // WordPress REST 原生同时支持 header 和 query 参数两种鉴权形式，功能等价。
+  if (b.restNonce) {
+    qs.set("_wpnonce", b.restNonce);
   }
+  const qsStr = qs.toString();
+  let url = `${b.restBase}${path}${qsStr ? "?" + qsStr : ""}`;
 
   const headers: Record<string, string> = {
     Accept: "application/json"
   };
-  if (b.restNonce) {
-    headers["X-WP-Nonce"] = b.restNonce;
-  }
-  const init: RequestInit = { method, headers };
+  // 注意：这里**不再设置 X-WP-Nonce header**，因为宝塔/Nginx WAF 对特定路径（friend-invitations、hub/get 等）
+  // 带 X-WP-Nonce header 的请求直接返回 nginx 原生 404（请求根本不到 PHP）。
+  // WordPress REST 原生同时支持 header 和 query 参数两种鉴权形式，?_wpnonce= 功能完全等价，已在上面注入 URL。
+  const init: RequestInit = { method, headers, credentials: "same-origin" };
   if (body !== undefined && body !== null) {
     headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
@@ -137,5 +140,11 @@ export const api = {
   },
   post<T>(path: string, body?: Record<string, unknown> | null) {
     return request<T>("POST", path, body ?? null);
+  },
+  put<T>(path: string, body?: Record<string, unknown> | null) {
+    return request<T>("PUT", path, body ?? null);
+  },
+  delete<T>(path: string, body?: Record<string, unknown> | null) {
+    return request<T>("DELETE", path, body ?? null);
   }
 };

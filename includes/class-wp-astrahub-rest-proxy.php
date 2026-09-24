@@ -58,18 +58,39 @@ class WP_AstraHub_Rest_Proxy {
     private $frontend_widget;
 
     /**
+     * 站点友链搬家服务（用于 site-migration/restore 路由）。
+     *
+     * @var WP_AstraHub_Site_Migration|null
+     */
+    private $site_migration;
+
+    /**
+     * 多节点选择器（用于 node-status / node-selection 路由）。
+     *
+     * @var WP_AstraHub_Node_Selector|null
+     */
+    private $node_selector;
+
+    /**
      * 允许通过通用代理访问的 Hub 路径前缀白名单。
+     *
+     * 与 Halo 端 AstraHubSignedPlanetReadService / AstraHubWorldChatService
+     * 等代理端点对齐。每条前缀的边界规则由 is_allowed_path 保证（'/' 结尾即精确
+     * 前缀，非 '/' 结尾视为完整端点）。
      *
      * @var string[]
      */
     private $allowed_prefixes = array(
-        '/v1/planet/',
-        '/v1/graph/',
-        '/v1/friend-invitations',
-        '/v1/friend-relations/',
+        '/v1/planet/',              // planet-links / planet-feed / planet-clusters / rss-deep-space
+        '/v1/graph/',               // my-site / nodes / topology / sites/{id}/relations
+        '/v1/friend-invitations',   // inbox / outbox / all / review / cancel / delete / ack
+        '/v1/friend-relations/',    // remove
+        '/v1/friend-follows/',      // remove (WP rest-friend 专用，也允许代理访问)
         '/v1/relations/',
-        '/v1/sites/lookup',
-        '/v1/world-chat/',
+        '/v1/sites/lookup',         // 查站点是否已注册
+        '/v1/sites/profile',        // PUT updateProfile (对齐 Halo AstraHubRegisterService.PROFILE_PATH)
+        '/v1/world-chat/',          // messages / members / stickers / consent / bootstrap
+        '/v1/site-migration/',      // restore (对齐 Halo AstraHubSiteMigrationRouter)
     );
 
     /**
@@ -108,6 +129,24 @@ class WP_AstraHub_Rest_Proxy {
      */
     public function set_frontend_widget( WP_AstraHub_Frontend_Widget $frontend_widget ) {
         $this->frontend_widget = $frontend_widget;
+    }
+
+    /**
+     * 注入站点友链搬家服务（在主类装配后调用）。
+     *
+     * @param WP_AstraHub_Site_Migration $site_migration 搬家服务。
+     */
+    public function set_site_migration( WP_AstraHub_Site_Migration $site_migration ) {
+        $this->site_migration = $site_migration;
+    }
+
+    /**
+     * 注入多节点选择器（在主类装配后调用）。
+     *
+     * @param WP_AstraHub_Node_Selector $node_selector 节点选择器。
+     */
+    public function set_node_selector( WP_AstraHub_Node_Selector $node_selector ) {
+        $this->node_selector = $node_selector;
     }
 
     /**
@@ -266,6 +305,50 @@ class WP_AstraHub_Rest_Proxy {
                 'methods'             => 'POST',
                 'permission_callback' => $permission,
                 'callback'            => array( $this, 'handle_save_widget_settings' ),
+            )
+        );
+
+        // 站点友链搬家：从 Hub 拉权威快照，完全替换本地 wp_links / link_category。
+        // 对齐 Halo AstraHubSiteMigrationRouter → AstraHubSiteMigrationService.migrate。
+        register_rest_route(
+            WP_AstraHub_Rest_Register::NAMESPACE,
+            '/site-migration/restore',
+            array(
+                'methods'             => 'POST',
+                'permission_callback' => $permission,
+                'callback'            => array( $this, 'handle_site_migration_restore' ),
+            )
+        );
+
+        // 多节点管理（对齐 Halo AstraHubNodeSelector + AstraHubNodeSelectorRouter）：
+        //   GET  /node-status        → 当前选中节点 + 所有节点的健康状态快照
+        //   POST /node-status/refresh → 立即对所有节点跑 /healthz 探针
+        //   POST /node-selection     → 手动锁定某个已验证节点（body: { url }）
+        register_rest_route(
+            WP_AstraHub_Rest_Register::NAMESPACE,
+            '/node-status',
+            array(
+                'methods'             => 'GET',
+                'permission_callback' => $permission,
+                'callback'            => array( $this, 'handle_node_status' ),
+            )
+        );
+        register_rest_route(
+            WP_AstraHub_Rest_Register::NAMESPACE,
+            '/node-status/refresh',
+            array(
+                'methods'             => 'POST',
+                'permission_callback' => $permission,
+                'callback'            => array( $this, 'handle_node_status_refresh' ),
+            )
+        );
+        register_rest_route(
+            WP_AstraHub_Rest_Register::NAMESPACE,
+            '/node-selection',
+            array(
+                'methods'             => 'POST',
+                'permission_callback' => $permission,
+                'callback'            => array( $this, 'handle_node_selection' ),
             )
         );
     }
@@ -761,6 +844,32 @@ class WP_AstraHub_Rest_Proxy {
     }
 
     /**
+     * 站点友链搬家：签名从 Hub 拉权威快照，校验后完全替换本地数据。
+     *
+     * @return WP_REST_Response
+     */
+    public function handle_site_migration_restore() {
+        if ( ! $this->site_migration ) {
+            return new WP_REST_Response( array( 'success' => false, 'message' => 'migration service unavailable' ), 500 );
+        }
+        if ( ! $this->credentials->is_registered() ) {
+            return $this->not_registered();
+        }
+        $result = $this->site_migration->migrate();
+        $status = isset( $result['status'] ) ? (int) $result['status'] : ( $result['success'] ? 200 : 400 );
+        $http   = $result['success'] ? 200 : ( $status >= 400 && $status < 600 ? $status : 400 );
+        return new WP_REST_Response(
+            array(
+                'success' => (bool) $result['success'],
+                'status'  => $status,
+                'message' => (string) $result['message'],
+                'data'    => isset( $result['data'] ) ? $result['data'] : array(),
+            ),
+            $http
+        );
+    }
+
+    /**
      * 未登舱响应。
      *
      * @return WP_REST_Response
@@ -775,5 +884,102 @@ class WP_AstraHub_Rest_Proxy {
             ),
             400
         );
+    }
+
+    // ========== 多节点管理（对齐 Halo AstraHubNodeSelectorRouter） ==========
+
+    /**
+     * 读取节点状态快照（不触发新探针）。
+     *
+     * @return WP_REST_Response
+     */
+    public function handle_node_status() {
+        if ( ! $this->node_selector ) {
+            return new WP_REST_Response(
+                array( 'success' => false, 'message' => 'node selector unavailable', 'data' => array() ),
+                500
+            );
+        }
+        return new WP_REST_Response(
+            array(
+                'success' => true,
+                'data'    => $this->node_selector->status_snapshot(),
+            ),
+            200
+        );
+    }
+
+    /**
+     * 立即对所有节点跑一轮 /healthz 探针。
+     *
+     * @return WP_REST_Response
+     */
+    public function handle_node_status_refresh() {
+        if ( ! $this->node_selector ) {
+            return new WP_REST_Response(
+                array( 'success' => false, 'message' => 'node selector unavailable', 'data' => array() ),
+                500
+            );
+        }
+        $snapshot = $this->node_selector->refresh_nodes();
+        $healthy = 0;
+        foreach ( $snapshot['nodes'] as $n ) {
+            if ( 'healthy' === ( $n['status'] ?? '' ) ) {
+                $healthy++;
+            }
+        }
+        return new WP_REST_Response(
+            array(
+                'success' => true,
+                'message' => 0 === $healthy
+                    ? '所有节点均未通过健康检测'
+                    : sprintf( '已检测 %d 个节点，%d 个健康', count( $snapshot['nodes'] ), $healthy ),
+                'data'    => $snapshot,
+            ),
+            200
+        );
+    }
+
+    /**
+     * 手动锁定某个 Hub 节点。
+     *
+     * 约束（对齐 Halo AstraHubNodeSelector.selectNode）：
+     *   1. URL 必须在内置列表中。
+     *   2. 该节点必须通过了最近一次健康检测（状态 healthy，且 lastCheckedAt 未过期）。
+     *
+     * @param WP_REST_Request $request 请求（body: { url }）。
+     * @return WP_REST_Response
+     */
+    public function handle_node_selection( WP_REST_Request $request ) {
+        if ( ! $this->node_selector ) {
+            return new WP_REST_Response(
+                array( 'success' => false, 'message' => 'node selector unavailable', 'data' => array() ),
+                500
+            );
+        }
+        $input = (array) $request->get_json_params();
+        $url   = isset( $input['url'] ) ? trim( (string) $input['url'] ) : '';
+        if ( '' === $url ) {
+            return new WP_REST_Response(
+                array( 'success' => false, 'message' => '缺少 url 参数' ),
+                400
+            );
+        }
+        try {
+            $snapshot = $this->node_selector->select_node( $url );
+            return new WP_REST_Response(
+                array(
+                    'success' => true,
+                    'message' => '已手动切换到该节点，将在 1 小时后自动重新检测',
+                    'data'    => $snapshot,
+                ),
+                200
+            );
+        } catch ( RuntimeException $e ) {
+            return new WP_REST_Response(
+                array( 'success' => false, 'message' => $e->getMessage() ),
+                400
+            );
+        }
     }
 }

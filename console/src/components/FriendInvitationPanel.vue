@@ -4,7 +4,7 @@ import {
   ackFriendInvitation,
   cancelFriendInvitation,
   deleteFriendInvitation,
-  fetchFriendInvitations,
+  fetchFriendInvitationOverview,
   fetchLinkGroups,
   normalizeFriendInvitationStatus,
   reconcileFriendInvitation,
@@ -421,33 +421,48 @@ async function reload() {
   loading.value = true;
   error.value = "";
   try {
-    if (activeTab.value === "all") {
-      const [inboxResp, outboxResp] = await Promise.all([
-        fetchFriendInvitations("inbox"),
-        fetchFriendInvitations("outbox")
-      ]);
-      const inboxTagged = tagDirection(inboxResp.items || [], "inbox");
-      const outboxTagged = tagDirection(outboxResp.items || [], "outbox");
-      const merged = new Map<string, FriendInvitationItem>();
-      for (const item of inboxTagged) {
-        const key = String(item.inviteId || "").trim();
-        if (key) merged.set(key, item);
-      }
-      for (const item of outboxTagged) {
-        const key = String(item.inviteId || "").trim();
-        if (key && !merged.has(key)) merged.set(key, item);
-      }
-      items.value = sortInvitationsDescending(Array.from(merged.values()));
-      total.value = items.value.length;
-      void reconcileAcceptedOutboxItems(outboxTagged);
+    // 直接把 UI tab 映射到 Hub overview 的 tab + status 参数，一次请求搞定。
+    // pending/accepted/rejected 实际还是 inbox + 状态筛选。
+    let overviewTab: "all" | "inbox" | "outbox";
+    let overviewStatus = "";
+    if (activeTab.value === "outbox") {
+      overviewTab = "outbox";
+    } else if (activeTab.value === "all") {
+      overviewTab = "all";
     } else {
-      const response = await fetchFriendInvitations(currentBox.value, currentStatus.value);
-      const tagged = tagDirection(response.items || [], currentBox.value);
-      items.value = sortInvitationsDescending(tagged);
-      total.value = response.total;
-      if (activeTab.value === "outbox") {
-        void reconcileAcceptedOutboxItems(tagged);
+      // pending / accepted / rejected → inbox + 状态
+      overviewTab = "inbox";
+      overviewStatus = activeTab.value;
+    }
+
+    const response = await fetchFriendInvitationOverview(overviewTab, overviewStatus);
+
+    // linkGroups 从 overview 结果里取（WP 端一次性返回）。
+    if (response.linkGroups && response.linkGroups.length > 0) {
+      linkGroups.value = response.linkGroups;
+    }
+
+    const tagged = response.items.map((raw) => {
+      const item = { ...raw } as FriendInvitationItem & { __direction: "inbox" | "outbox" };
+      const dir = String(raw.direction || "").toLowerCase();
+      if (dir === "inbox" || dir === "outbox") {
+        item.__direction = dir;
+      } else {
+        // Hub 没给 direction 时 fallback 到本地判断
+        const myId = siteId;
+        const fromId = String(raw.fromSite?.siteId || "").trim();
+        const toId = String(raw.toSite?.siteId || "").trim();
+        item.__direction = fromId === myId ? "outbox" : (toId === myId ? "inbox" : "inbox");
       }
+      item.status = normalizeFriendInvitationStatus(item.status);
+      return item;
+    });
+
+    items.value = sortInvitationsDescending(tagged);
+    total.value = response.total;
+
+    if (activeTab.value === "outbox") {
+      void reconcileAcceptedOutboxItems(tagged);
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : "读取友链邀请失败";
@@ -504,6 +519,7 @@ async function retryOutboxInvitation(item: FriendInvitationItem) {
 }
 
 async function ensureLinkGroups() {
+  // overview 已经一起返回 linkGroups，只有为空时才兜底单独拉一次。
   if (linkGroups.value.length > 0) {
     return;
   }

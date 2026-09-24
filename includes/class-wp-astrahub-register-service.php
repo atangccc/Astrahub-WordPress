@@ -321,6 +321,103 @@ class WP_AstraHub_Register_Service {
     }
 
     /**
+     * 更新站点资料（对齐 Halo AstraHubRegisterService.updateProfileBlocking）。
+     *
+     * Hub 端签名 PUT /v1/sites/profile，允许已注册站点更新 name/url/description/
+     * rssUrl/avatarUrl/contactEmail/nodeName/nodeAvatar。成功后 Hub 会返回最新的
+     * nodeName / category / nodeAvatar，以此为准落库。
+     *
+     * @param array $input 站点资料字段（同 build_register_payload）。
+     * @return array{success:bool,status:int,message:string,data:array}
+     */
+    public function update_profile( array $input ) {
+        $creds = $this->credentials->get_credentials();
+        if ( '' === trim( $creds['siteId'] ) || '' === trim( $creds['apiKey'] ) ) {
+            return $this->fail( 401, 'siteId/apiKey is required，请先注册站点' );
+        }
+
+        $connection = $this->credentials->get_connection();
+        $site_name  = trim( (string) ( $input['siteName'] ?? $connection['siteName'] ) );
+        $site_url   = trim( (string) ( $input['siteUrl'] ?? $connection['siteUrl'] ) );
+        $email      = trim( (string) ( $input['contactEmail'] ?? $connection['contactEmail'] ) );
+        $node_name  = trim( (string) ( $input['siteNodeName'] ?? $connection['siteNodeName'] ) );
+        if ( '' === $site_name || '' === $site_url || '' === $email || '' === $node_name ) {
+            return $this->fail( 400, 'site profile is incomplete', array(
+                'siteName'     => '' === $site_name ? '站点名称不能为空' : '',
+                'siteUrl'      => '' === $site_url ? '站点 URL 不能为空' : '',
+                'contactEmail' => '' === $email ? '联系邮箱不能为空' : '',
+                'siteNodeName' => '' === $node_name ? '星链节点名不能为空' : '',
+            ) );
+        }
+
+        $payload = array(
+            'name'         => $site_name,
+            'url'          => $site_url,
+            'description'  => trim( (string) ( $input['siteDescription'] ?? $connection['siteDescription'] ) ),
+            'rssUrl'       => trim( (string) ( $input['siteRssUrl'] ?? $connection['siteRssUrl'] ) ),
+            'avatarUrl'    => trim( (string) ( $input['siteAvatarUrl'] ?? $connection['siteAvatarUrl'] ) ),
+            'contactEmail' => $email,
+            'nodeName'     => $node_name,
+            'nodeAvatar'   => trim( (string) ( $input['siteNodeAvatar'] ?? $connection['siteNodeAvatar'] ) ),
+        );
+
+        $response = $this->hub_client->request_signed( 'PUT', '/v1/sites/profile', $payload );
+
+        if ( ! $response['success'] ) {
+            return $this->fail( $response['status'], $response['message'] );
+        }
+
+        $body = $response['body'];
+
+        // Hub 可能回传更新后的 nodeName / category / nodeAvatar，以此为准覆盖本地凭据。
+        $hub_node_name = $this->str( $body, 'nodeName' );
+        $hub_category  = $this->str( $body, 'category' );
+        $hub_avatar    = $this->str( $body, 'nodeAvatar' );
+
+        if ( '' !== $hub_node_name || '' !== $hub_category || '' !== $hub_avatar ) {
+            $update = array();
+            if ( '' !== $hub_node_name ) {
+                $update['nodeName'] = $hub_node_name;
+            }
+            if ( '' !== $hub_category ) {
+                $update['category'] = $hub_category;
+            }
+            if ( '' !== $hub_avatar ) {
+                $update['nodeAvatar'] = $hub_avatar;
+            }
+            if ( ! empty( $update ) ) {
+                $merged = array_merge( $creds, $update );
+                $this->credentials->save_credentials( $merged );
+            }
+        }
+
+        // 同步连接配置：把本次提交的字段（或 Hub 返回的）写进本地连接信息。
+        $this->credentials->save_connection(
+            array(
+                'siteName'        => $site_name,
+                'siteUrl'         => $site_url,
+                'siteDescription' => $payload['description'],
+                'siteRssUrl'      => $payload['rssUrl'],
+                'siteAvatarUrl'   => $payload['avatarUrl'],
+                'contactEmail'    => $email,
+                'siteNodeName'    => $node_name,
+                'siteNodeAvatar'  => $payload['nodeAvatar'],
+            )
+        );
+
+        return $this->ok(
+            $response['status'],
+            'profile updated',
+            array(
+                'siteId'     => $creds['siteId'],
+                'nodeName'   => $hub_node_name ?: $creds['nodeName'],
+                'category'   => $hub_category ?: $creds['category'],
+                'nodeAvatar' => $hub_avatar ?: $creds['nodeAvatar'],
+            )
+        );
+    }
+
+    /**
      * 安全读取字符串字段。
      *
      * @param array  $source 源。

@@ -27,6 +27,13 @@ class WP_AstraHub_Hub_Client {
     private $credentials;
 
     /**
+     * 多节点选择器（可选，有则自动 failover）。
+     *
+     * @var WP_AstraHub_Node_Selector|null
+     */
+    private $node_selector;
+
+    /**
      * 请求超时（秒）。
      *
      * @var int
@@ -36,18 +43,41 @@ class WP_AstraHub_Hub_Client {
     /**
      * 构造。
      *
-     * @param WP_AstraHub_Credential_Store $credentials 凭据存储。
+     * @param WP_AstraHub_Credential_Store  $credentials   凭据存储。
+     * @param WP_AstraHub_Node_Selector|null $node_selector 多节点选择器（可选）。
      */
-    public function __construct( WP_AstraHub_Credential_Store $credentials ) {
-        $this->credentials = $credentials;
+    public function __construct(
+        WP_AstraHub_Credential_Store $credentials,
+        $node_selector = null
+    ) {
+        $this->credentials   = $credentials;
+        $this->node_selector = $node_selector;
+    }
+
+    /**
+     * 设置 / 切换节点选择器（主要用于依赖注入时机晚于 Hub_Client 构造的场景）。
+     *
+     * @param WP_AstraHub_Node_Selector $node_selector 节点选择器。
+     */
+    public function set_node_selector( WP_AstraHub_Node_Selector $node_selector ) {
+        $this->node_selector = $node_selector;
     }
 
     /**
      * Hub 基础地址（去尾部斜杠）。
      *
+     * 优先用 NodeSelector 选中的节点，fallback 到编译期常量
+     * WP_ASTRAHUB_HUB_BASE_URL（为了向后兼容 + 极端情况下的兜底）。
+     *
      * @return string
      */
     public function base_url() {
+        if ( $this->node_selector ) {
+            $current = $this->node_selector->current_node();
+            if ( '' !== $current ) {
+                return $current;
+            }
+        }
         return rtrim( WP_ASTRAHUB_HUB_BASE_URL, '/' );
     }
 
@@ -80,7 +110,7 @@ class WP_AstraHub_Hub_Client {
     }
 
     /**
-     * 实际派发请求。
+     * 实际派发请求（带多节点 failover）。
      *
      * @param string     $method HTTP 方法。
      * @param string     $path   路径。
@@ -125,56 +155,108 @@ class WP_AstraHub_Hub_Client {
         // 调用方额外头优先级最高（覆盖）。
         $request_headers = array_merge( $request_headers, $headers );
 
-        $url = $this->base_url() . $path;
-        if ( ! empty( $query ) ) {
-            $url = add_query_arg( array_map( 'rawurlencode', $query ), $url );
-        }
+        // 确定候选节点列表（用于 failover）。
+        $candidates = $this->candidate_nodes();
+        $last_result = null;
 
-        $args = array(
-            'method'  => $method,
-            'headers' => $request_headers,
-            'timeout' => $this->timeout,
-        );
-        if ( null !== $body ) {
-            $args['body'] = $body_string;
-        }
+        foreach ( $candidates as $node ) {
+            $url = $node . $path;
+            if ( ! empty( $query ) ) {
+                $url = add_query_arg( array_map( 'rawurlencode', $query ), $url );
+            }
 
-        $response = wp_remote_request( $url, $args );
+            $args = array(
+                'method'  => $method,
+                'headers' => $request_headers,
+                'timeout' => $this->timeout,
+            );
+            if ( null !== $body ) {
+                $args['body'] = $body_string;
+            }
 
-        if ( is_wp_error( $response ) ) {
-            return $this->fail( 502, '网络请求错误：' . $response->get_error_message() );
-        }
+            $started = microtime( true );
+            $response = wp_remote_request( $url, $args );
+            $duration_ms = (int) round( ( microtime( true ) - $started ) * 1000 );
 
-        $status = (int) wp_remote_retrieve_response_code( $response );
-        $raw    = (string) wp_remote_retrieve_body( $response );
-        $content_type = strtolower( trim( (string) wp_remote_retrieve_header( $response, 'content-type' ) ) );
-        if ( false !== strpos( $content_type, ';' ) ) {
-            $content_type = trim( strtok( $content_type, ';' ) );
-        }
-        $parsed = json_decode( $raw, true );
-        if ( ! is_array( $parsed ) ) {
-            $parsed = array();
-        }
+            if ( is_wp_error( $response ) ) {
+                $last_result = $this->fail( 502, '网络请求错误：' . $response->get_error_message() );
+                if ( $this->node_selector ) {
+                    $this->node_selector->record_failure( $node, $response->get_error_message() );
+                }
+                // 继续下一个候选。
+                continue;
+            }
 
-        if ( $status >= 200 && $status < 300 ) {
+            $status = (int) wp_remote_retrieve_response_code( $response );
+            $raw    = (string) wp_remote_retrieve_body( $response );
+            $content_type = strtolower( trim( (string) wp_remote_retrieve_header( $response, 'content-type' ) ) );
+            if ( false !== strpos( $content_type, ';' ) ) {
+                $content_type = trim( strtok( $content_type, ';' ) );
+            }
+            $parsed = json_decode( $raw, true );
+            if ( ! is_array( $parsed ) ) {
+                $parsed = array();
+            }
+
+            if ( $status >= 200 && $status < 300 ) {
+                // 成功：记录 EWMA 并返回。
+                if ( $this->node_selector ) {
+                    $this->node_selector->record_success( $node, $duration_ms );
+                }
+                return array(
+                    'success' => true,
+                    'status'  => $status,
+                    'body'    => $parsed,
+                    'raw'     => $raw,
+                    'contentType' => $content_type,
+                    'message' => '',
+                );
+            }
+
+            // 需要 failover 的状态码：切下一个候选。
+            // 注意：内联判断（不调 Node_Selector::should_failover 静态方法），避免类缺失时崩。
+            $s = (int) $status;
+            $should_failover = ( $s >= 300 && $s < 400 ) || 408 === $s || 502 === $s || 503 === $s || 504 === $s;
+            if ( $this->node_selector && $should_failover ) {
+                $this->node_selector->record_failure( $node, 'HTTP ' . $status );
+                $last_result = array(
+                    'success' => false,
+                    'status'  => $status,
+                    'body'    => $parsed,
+                    'raw'     => $raw,
+                    'contentType' => $content_type,
+                    'message' => 'Hub 节点临时不可用（HTTP ' . $status . '），已尝试下一个节点',
+                );
+                continue;
+            }
+
+            // 非 failover 的错误（4xx 等业务错误）：直接返回，不切节点。
             return array(
-                'success' => true,
+                'success' => false,
                 'status'  => $status,
                 'body'    => $parsed,
                 'raw'     => $raw,
                 'contentType' => $content_type,
-                'message' => '',
+                'message' => $this->extract_error_message( $parsed, $status ),
             );
         }
 
-        return array(
-            'success' => false,
-            'status'  => $status,
-            'body'    => $parsed,
-            'raw'     => $raw,
-            'contentType' => $content_type,
-            'message' => $this->extract_error_message( $parsed, $status ),
-        );
+        // 所有候选都失败了——返回最后一个错误。
+        return null !== $last_result
+            ? $last_result
+            : $this->fail( 502, '所有 Hub 节点均不可达' );
+    }
+
+    /**
+     * 本次请求可尝试的节点列表（failover 顺序）。
+     *
+     * @return string[]
+     */
+    private function candidate_nodes() {
+        if ( $this->node_selector ) {
+            return $this->node_selector->ordered_candidates();
+        }
+        return array( $this->base_url() );
     }
 
     /**

@@ -1,5 +1,15 @@
 # 更新日志
 
+## 0.3.0 - 2026-09-24
+
+**新功能：站点迁移与多节点选择**
+
+- 新增 `WP_AstraHub_Site_Migration` 类：从 Hub 拉取权威友链快照，经版本号/siteId/SHA-256 checksum 三重校验后，完全替换本地 `wp_links` / `link_category` 数据，支持换域名/换服务器时一键恢复站点友链。
+- 新增 `WP_AstraHub_Node_Selector` 类：内置 5 个公共 Hub 节点，每小时自动对所有节点执行 `/healthz` 探针，选第一个健康且 EWMA 延迟最低的节点作为当前节点；Hub 请求遇 408/502/503/504 或网络错误时自动 failover 到下一个健康节点。
+- `WP_AstraHub_Rest_Proxy` 新增三条站点迁移 REST 路由（`POST /site-migration/restore`）和三条多节点管理 REST 路由（`GET /node-status`、`POST /node-status/refresh`、`POST /node-selection`），并将 `/v1/site-migration/` 加入 Hub 代理白名单。
+- `WP_AstraHub_Rest_Register` 增强：新增 `PUT /profile` 路由，将前端站点资料签名转发 Hub `PUT /v1/sites/profile`，Hub 返回的最新 `nodeName`/`category`/`nodeAvatar` 会回写本地凭据和连接配置。
+- Hub 代理白名单扩充：新增 `/v1/sites/profile`、`/v1/site-migration/`、`/v1/friend-follows/` 路径前缀。
+
 ## 0.2.1 - 2026-07-12
 
 - 修复贴图文件 403 错误：修正 `worldChatStickerFileUrl` 路径前缀，添加 `/v1/` 以通过服务端路径白名单校验。
