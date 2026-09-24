@@ -9,3 +9,4 @@ Thumbs.db
 *.tmp
 *.map
 build-plugin.ps1
+halo
