@@ -4,7 +4,7 @@ Tags: friend-links, blogroll, link-exchange, webring, rss
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
-Stable tag: 0.2.1
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -91,6 +91,14 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 4. 接入配置：站点接入、同步状态与前台显示开关。
 
 == Changelog ==
+
+= 0.3.0 =
+新功能：站点迁移与多节点选择。
+* 新增站点友链搬家功能：从 Hub 拉取权威友链快照，经版本号/siteId/SHA-256 checksum 三重校验后，一键替换本地友链数据，换域名/换服务器时可快速恢复。
+* 新增多节点健康探针与自动选择：内置 5 个公共 Hub 节点，每小时自动探测并选择延迟最低的健康节点；Hub 请求遇网络错误时自动切换到下一个节点，提升连接稳定性。
+* 新增节点管理 REST 路由（状态快照、立即检测、手动锁定）。
+* 新增站点资料更新路由：更新站点信息后同步推送 Hub，Hub 返回的最新节点身份信息自动回写本地。
+* Hub 代理白名单扩充，覆盖站点迁移、资料更新等新端点。
 
 = 0.2.1 =
 * 修复贴图文件 403 错误：修正 `worldChatStickerFileUrl` 路径前缀，添加 `/v1/` 以通过服务端路径白名单校验。
