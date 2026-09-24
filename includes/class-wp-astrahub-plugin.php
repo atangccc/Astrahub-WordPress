@@ -36,6 +36,13 @@ class WP_AstraHub_Plugin {
     private $hub_client;
 
     /**
+     * 多节点选择器。
+     *
+     * @var WP_AstraHub_Node_Selector
+     */
+    private $node_selector;
+
+    /**
      * 注册服务。
      *
      * @var WP_AstraHub_Register_Service
@@ -106,6 +113,13 @@ class WP_AstraHub_Plugin {
     private $frontend_widget;
 
     /**
+     * 站点友链搬家服务。
+     *
+     * @var WP_AstraHub_Site_Migration
+     */
+    private $site_migration;
+
+    /**
      * 获取单例。
      *
      * @return WP_AstraHub_Plugin
@@ -121,11 +135,23 @@ class WP_AstraHub_Plugin {
      * 构造：装配服务 + 注册钩子。
      */
     private function __construct() {
-        $this->credentials = new WP_AstraHub_Credential_Store();
-        $this->hub_client  = new WP_AstraHub_Hub_Client( $this->credentials );
+        $this->credentials   = new WP_AstraHub_Credential_Store();
+
+        // 多节点选择器（防御性 class_exists，若 node-selector.php 缺失则优雅降级到单节点模式）。
+        $node_selector_exists = class_exists( 'WP_AstraHub_Node_Selector' );
+        $this->node_selector  = $node_selector_exists ? new WP_AstraHub_Node_Selector() : null;
+        $this->hub_client     = new WP_AstraHub_Hub_Client( $this->credentials, $this->node_selector );
+        if ( $this->node_selector ) {
+            $this->node_selector->set_hub_client( $this->hub_client );
+        }
+
         $this->register_service = new WP_AstraHub_Register_Service( $this->hub_client, $this->credentials );
         $this->rest_register    = new WP_AstraHub_Rest_Register( $this->register_service, $this->credentials );
         $this->rest_proxy       = new WP_AstraHub_Rest_Proxy( $this->hub_client, $this->credentials );
+        if ( $this->node_selector ) {
+            $this->rest_proxy->set_node_selector( $this->node_selector );
+        }
+
         $this->collector        = new WP_AstraHub_Graph_Collector( $this->credentials );
         $this->push_service     = new WP_AstraHub_Push_Service( $this->hub_client, $this->credentials, $this->collector );
         $this->rest_proxy->set_push_service( $this->push_service );
@@ -138,6 +164,20 @@ class WP_AstraHub_Plugin {
         $this->frontend_widget  = new WP_AstraHub_Frontend_Widget( $this->credentials, $this->push_service );
         $this->rest_proxy->set_frontend_widget( $this->frontend_widget );
 
+        // 站点友链搬家服务（防御性 class_exists，若 site-migration.php 缺失则静默跳过）。
+        $site_migration_exists = class_exists( 'WP_AstraHub_Site_Migration' );
+        $this->site_migration  = $site_migration_exists
+            ? new WP_AstraHub_Site_Migration( $this->hub_client, $this->credentials, $this->reconcile )
+            : null;
+        if ( $this->site_migration ) {
+            $this->rest_proxy->set_site_migration( $this->site_migration );
+        }
+
+        // 认证兜底：如果 WP 核心的 rest_cookie_check_errors 因为 nonce 失败拦截了请求，
+        // 但用户已登录且有 manage_options，则放行。虚拟主机上宝塔/Nginx WAF 可能会过滤
+        // 掉 _wpnonce query 参数，导致 WP 原生 cookie 认证在 nonce 验证阶段就提前拒绝。
+        add_filter( 'rest_authentication_errors', array( $this, 'soften_rest_auth_errors' ), 99 );
+
         add_action( 'rest_api_init', array( $this->rest_register, 'register_routes' ) );
         add_action( 'rest_api_init', array( $this->rest_proxy, 'register_routes' ) );
         add_action( 'rest_api_init', array( $this->rest_friend, 'register_routes' ) );
@@ -145,6 +185,31 @@ class WP_AstraHub_Plugin {
         add_action( 'init', array( $this->cron, 'register' ) );
         $this->frontend_widget->register();
         register_deactivation_hook( WP_ASTRAHUB_FILE, array( 'WP_AstraHub_Cron', 'clear' ) );
+    }
+
+    /**
+     * 认证兜底：nonce 错误但已登录管理员则放行。
+     *
+     * @param WP_Error|null|bool $result 认证结果。
+     * @return WP_Error|null|bool
+     */
+    public function soften_rest_auth_errors( $result ) {
+        if ( is_wp_error( $result ) ) {
+            $code = $result->get_error_code();
+            // rest_cookie_invalid_nonce: nonce 无效/过期; rest_cookie_missing_session: session 丢失。
+            if ( in_array( $code, array( 'rest_cookie_invalid_nonce', 'rest_cookie_missing_session', 'rest_cookie_colors_required' ), true ) ) {
+                // 先让 wp 加载当前用户（如果还没加载的话）。
+                if ( ! did_action( 'wp_loaded' ) ) {
+                    wp_get_current_user();
+                }
+                if ( is_user_logged_in() && current_user_can( 'manage_options' ) ) {
+                    // 放行 — 后续各路由的 permission_callback 会再次检查 manage_options。
+                    error_log( '[AstraHub] soften_rest_auth_errors bypassed nonce=' . $code . ' for logged-in admin (user_id=' . get_current_user_id() . ')' );
+                    return null;
+                }
+            }
+        }
+        return $result;
     }
 
     /**

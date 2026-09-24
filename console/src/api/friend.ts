@@ -1,4 +1,5 @@
-// 友链管理 API：经插件 REST 代理签名转发 Hub /v1/friend-invitations/*。
+﻿// 友链管理 API：对齐 Halo 端 AstraHubFriendManagementRouter。
+// 插件 REST 层签名转发 Hub，前端路径与 WP 端点一一对应。
 import { api } from "./client";
 
 export interface FriendSiteInfo {
@@ -12,6 +13,7 @@ export interface FriendSiteInfo {
 
 export interface FriendInvitationItem {
   inviteId: string;
+  direction?: string;
   fromSite: FriendSiteInfo;
   toSite: FriendSiteInfo;
   message?: string;
@@ -27,20 +29,27 @@ export interface FriendInvitationItem {
   updatedAt: string;
 }
 
-export interface FriendInvitationsResponse {
-  success: boolean;
-  generatedAt: string;
-  total: number;
-  items: FriendInvitationItem[];
-}
-
 export interface LinkGroupOption {
   name: string;
   displayName: string;
 }
 
-export type FriendInvitationQueryTab = "all" | "inbox" | "outbox";
-export type FriendInvitationStatus = "pending" | "accepted" | "rejected" | "cancelled" | "expired" | string;
+export interface FriendInvitationOverviewResponse {
+  success: boolean;
+  status: number;
+  message: string;
+  tab: string;
+  generatedAt: string;
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  pendingCount: number;
+  items: FriendInvitationItem[];
+  linkGroups: LinkGroupOption[];
+}
+
+export type FriendInvitationOverviewTab = "all" | "inbox" | "outbox";
 
 export const FRIEND_INVITATION_STATUSES = ["pending", "accepted", "rejected", "cancelled", "expired"] as const;
 
@@ -58,6 +67,8 @@ export function normalizeFriendInvitationStatus(status: unknown): FriendInvitati
   return value || "pending";
 }
 
+export type FriendInvitationStatus = "pending" | "accepted" | "rejected" | "cancelled" | "expired" | string;
+
 function normalizeFriendInvitationItem(item: FriendInvitationItem): FriendInvitationItem {
   return {
     ...item,
@@ -65,12 +76,16 @@ function normalizeFriendInvitationItem(item: FriendInvitationItem): FriendInvita
   };
 }
 
-export async function fetchFriendInvitations(
-  tab: FriendInvitationQueryTab,
+/**
+ * 友链邀请管理总览 —— 一次请求返回指定 tab 的列表 + linkGroups + 统计，
+ * 对齐 Halo 端 AstraHubFriendManagementRouter.overviewInvitations。
+ */
+export async function fetchFriendInvitationOverview(
+  tab: FriendInvitationOverviewTab = "all",
   status = "",
   limit = 20,
   offset = 0
-): Promise<FriendInvitationsResponse> {
+): Promise<FriendInvitationOverviewResponse> {
   const query: Record<string, string> = {
     tab,
     limit: String(Math.max(1, Math.min(100, limit))),
@@ -79,17 +94,47 @@ export async function fetchFriendInvitations(
   if (status.trim()) {
     query.status = status.trim();
   }
-  const resp = await api.get<unknown>("/friend-invitations", query);
+  const resp = await api.get<unknown>("/astrahub/friend-invitations/overview", query);
   const raw = (resp.data || {}) as Record<string, unknown>;
   const items = Array.isArray(raw.items)
     ? (raw.items as FriendInvitationItem[]).map(normalizeFriendInvitationItem)
     : [];
+  const linkGroups = Array.isArray(raw.linkGroups)
+    ? (raw.linkGroups as LinkGroupOption[])
+    : [];
   return {
     success: Boolean(resp.success),
+    status: Number(raw.status || resp.status || 200),
+    message: String(raw.message || ""),
+    tab: String(raw.tab || tab),
     generatedAt: String(raw.generatedAt || ""),
     total: Number(raw.total || items.length),
-    items
+    limit: Number(raw.limit || limit),
+    offset: Number(raw.offset || offset),
+    hasMore: Boolean(raw.hasMore),
+    pendingCount: Number(raw.pendingCount || 0),
+    items,
+    linkGroups
   };
+}
+
+/**
+ * 兼容旧名：fetchFriendInvitations → overview（一次搞定列表 + linkGroups）。
+ */
+export const fetchFriendInvitations = fetchFriendInvitationOverview;
+
+export async function fetchLinkGroups(): Promise<LinkGroupOption[]> {
+  const resp = await api.get<unknown>("/astrahub/friend-invitations/link-groups");
+  const raw = (resp.data || {}) as Record<string, unknown>;
+  return Array.isArray(raw.items) ? (raw.items as LinkGroupOption[]) : [];
+}
+
+export async function createFriendInvitation(toSiteId: string, message = "", linkGroupName = "") {
+  const resp = await api.post<unknown>("/astrahub/friend-invitations", { toSiteId, message, linkGroupName });
+  if (!resp.success) {
+    throw new Error(resp.message || "发起邀请失败");
+  }
+  return resp;
 }
 
 export async function reviewFriendInvitation(
@@ -98,7 +143,7 @@ export async function reviewFriendInvitation(
   reason = "",
   linkGroupName = ""
 ) {
-  const resp = await api.post<unknown>(`/friend-invitations/${encodeURIComponent(inviteId)}/review`, {
+  const resp = await api.post<unknown>(`/astrahub/friend-invitations/${encodeURIComponent(inviteId)}/review`, {
     approved,
     reason,
     linkGroupName
@@ -110,7 +155,7 @@ export async function reviewFriendInvitation(
 }
 
 export async function cancelFriendInvitation(inviteId: string) {
-  const resp = await api.post<unknown>(`/friend-invitations/${encodeURIComponent(inviteId)}/cancel`, {});
+  const resp = await api.post<unknown>(`/astrahub/friend-invitations/${encodeURIComponent(inviteId)}/cancel`, {});
   if (!resp.success) {
     throw new Error(resp.message || "撤回失败");
   }
@@ -118,34 +163,19 @@ export async function cancelFriendInvitation(inviteId: string) {
 }
 
 export async function deleteFriendInvitation(inviteId: string) {
-  const resp = await api.post<unknown>(`/friend-invitations/${encodeURIComponent(inviteId)}/delete`, {});
+  const resp = await api.post<unknown>(`/astrahub/friend-invitations/${encodeURIComponent(inviteId)}/delete`, {});
   if (!resp.success) {
     throw new Error(resp.message || "删除失败");
   }
   return resp;
 }
 
-export async function fetchLinkGroups(): Promise<LinkGroupOption[]> {
-  const resp = await api.get<unknown>("/friend-invitations/link-groups");
-  const raw = (resp.data || {}) as Record<string, unknown>;
-  return Array.isArray(raw.items) ? (raw.items as LinkGroupOption[]) : [];
-}
-
-export async function createFriendInvitation(toSiteId: string, message = "", linkGroupName = "") {
-  const resp = await api.post<unknown>("/friend-invitations", { toSiteId, message, linkGroupName });
-  if (!resp.success) {
-    throw new Error(resp.message || "发起邀请失败");
-  }
-  return resp;
-}
-
 // 邀请方侧：已接受邀请后，把对端写进本地友链（对齐 Halo reconcileFriendInvitation）。
-// 请求体与 Halo 一致，扁平化双方站点字段 + currentSiteId，由插件按本站凭据择出对端。
 export async function reconcileFriendInvitation(
   invitation: FriendInvitationItem,
   currentSiteId: string
 ): Promise<{ created: boolean; duplicate: boolean; message: string }> {
-  const resp = await api.post<unknown>(`/friend-invitations/${encodeURIComponent(invitation.inviteId)}/reconcile`, {
+  const resp = await api.post<unknown>(`/astrahub/friend-invitations/${encodeURIComponent(invitation.inviteId)}/reconcile`, {
     currentSiteId,
     fromSiteId: invitation.fromSite.siteId,
     fromSiteName: invitation.fromSite.siteName,
@@ -172,9 +202,9 @@ export async function reconcileFriendInvitation(
   };
 }
 
-// 邀请方侧：把本地建链结果回执给 Hub（写 ackedAt / lastError）。对齐 Halo ackFriendInvitation。
+// 邀请方侧：把本地建链结果回执给 Hub（对齐 Halo ackFriendInvitation）。
 export async function ackFriendInvitation(inviteId: string, lastError = ""): Promise<void> {
-  const resp = await api.post<unknown>(`/friend-invitations/${encodeURIComponent(inviteId)}/ack`, { lastError });
+  const resp = await api.post<unknown>(`/astrahub/friend-invitations/${encodeURIComponent(inviteId)}/ack`, { lastError });
   if (!resp.success) {
     throw new Error(resp.message || "回执 Hub 失败");
   }
@@ -188,7 +218,7 @@ export interface RemoveRelationResult {
 }
 
 export async function removeFriendRelation(peerSiteId: string, reason = ""): Promise<RemoveRelationResult> {
-  const resp = await api.post<unknown>(`/friend-relations/${encodeURIComponent(peerSiteId)}/remove`, { reason });
+  const resp = await api.post<unknown>(`/astrahub/friend-relations/${encodeURIComponent(peerSiteId)}/remove`, { reason });
   if (!resp.success) {
     throw new Error(resp.message || "解除友链关系失败");
   }
@@ -202,7 +232,7 @@ export async function removeFriendRelation(peerSiteId: string, reason = ""): Pro
 }
 
 export async function removeOwnFriendFollow(peerSiteId: string): Promise<RemoveRelationResult> {
-  const resp = await api.post<unknown>(`/friend-follows/${encodeURIComponent(peerSiteId)}/remove`, {});
+  const resp = await api.post<unknown>(`/astrahub/friend-follows/${encodeURIComponent(peerSiteId)}/remove`, {});
   if (!resp.success) {
     throw new Error(resp.message || "删除友链失败");
   }
@@ -215,8 +245,35 @@ export async function removeOwnFriendFollow(peerSiteId: string): Promise<RemoveR
   };
 }
 
-// 实时自清理：WS 收到对端解除关系/改资料事件后，把事件原样回传插件，插件按本站凭据
-// 直接处理本地友链（删/改），对齐 Halo 端 HubRealtimeBridge。失败静默（cron 兜底）。
+// ──────────────────────────────────────────────
+//  站点查询（Halo 端新增端点）
+// ──────────────────────────────────────────────
+
+export interface SiteLookupResult {
+  registered: boolean;
+  registeredByPlugin: boolean;
+  credentialReady: boolean;
+  siteId: string;
+  siteName: string;
+  siteUrl: string;
+  avatarUrl: string;
+  supportsInvitation: boolean;
+  invitationState: string;
+  invitationMessage: string;
+}
+
+export async function lookupSiteByUrl(rawUrl: string): Promise<SiteLookupResult> {
+  const resp = await api.get<unknown>("/astrahub/sites/lookup", { url: rawUrl });
+  if (!resp.success) {
+    throw new Error(resp.message || "查询站点失败");
+  }
+  return (resp.data || {}) as SiteLookupResult;
+}
+
+// ──────────────────────────────────────────────
+//  实时自清理：对端解除关系/改资料事件回传插件
+// ──────────────────────────────────────────────
+
 export async function dispatchSelfCleanupEvent(type: string, data: unknown): Promise<void> {
   const t = String(type || "").trim();
   if (t !== "friend_relation_removed" && t !== "site_profile_updated") return;

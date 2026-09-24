@@ -147,6 +147,17 @@ class WP_AstraHub_Rest_Register {
                 'callback'            => array( $this, 'handle_logout' ),
             )
         );
+
+        // 更新站点资料（对齐 Halo PUT astrahub/profile → Hub PUT /v1/sites/profile）。
+        register_rest_route(
+            self::NAMESPACE,
+            '/profile',
+            array(
+                'methods'             => 'PUT',
+                'permission_callback' => $permission,
+                'callback'            => array( $this, 'handle_update_profile' ),
+            )
+        );
     }
 
     /**
@@ -309,6 +320,21 @@ class WP_AstraHub_Rest_Register {
             ),
             200
         );
+    }
+
+    /**
+     * 更新站点资料（对齐 Halo AstraHubRegisterRouter.updateProfile）。
+     *
+     * 把前端提交的站点字段签名转发 Hub PUT /v1/sites/profile，Hub 返回的
+     * 最新 nodeName/category/nodeAvatar 会回写本地凭据和连接配置。
+     *
+     * @param WP_REST_Request $request 请求。
+     * @return WP_REST_Response
+     */
+    public function handle_update_profile( WP_REST_Request $request ) {
+        $input  = (array) $request->get_json_params();
+        $result = $this->register_service->update_profile( $input );
+        return $this->respond( $result );
     }
 
     /**

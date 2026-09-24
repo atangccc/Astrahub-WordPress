@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // 禁止直接访问
 }
 
-define( 'WP_ASTRAHUB_VERSION', '0.1.9' );
+define( 'WP_ASTRAHUB_VERSION', '0.2.1' );
 define( 'WP_ASTRAHUB_FILE', __FILE__ );
 define( 'WP_ASTRAHUB_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP_ASTRAHUB_URL', plugin_dir_url( __FILE__ ) );
